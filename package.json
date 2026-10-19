@@ -5,6 +5,14 @@
   "type": "module",
   "license": "MIT",
   "author": "Serik Shaikamalov",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/serikshaikamalov/hono-mcp-bridge.git"
+  },
+  "homepage": "https://github.com/serikshaikamalov/hono-mcp-bridge#readme",
+  "bugs": {
+    "url": "https://github.com/serikshaikamalov/hono-mcp-bridge/issues"
+  },
   "keywords": [
     "hono",
     "mcp",

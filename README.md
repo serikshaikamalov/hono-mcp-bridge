@@ -18,7 +18,7 @@
 
 Your zod schemas become the tools' input schemas. Calls go through your real routes, so validation, auth middleware and logging work exactly as they do for HTTP clients.
 
-<!-- TODO: GIF of Claude calling the tours API -->
+![Claude Code finds and books a tour through hono-mcp-bridge](docs/demo.gif)
 
 ## Install
 
