@@ -1,0 +1,39 @@
+{
+  "name": "hono-mcp-bridge",
+  "version": "0.1.0",
+  "description": "Turn your existing Hono routes into MCP tools for AI agents. Change one import, keep your routes.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Serik Shaikamalov",
+  "keywords": ["hono", "mcp", "model-context-protocol", "ai", "agents", "llm", "zod", "claude", "cursor"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "example": "bun --watch examples/tours.ts",
+    "prepublishOnly": "bun run typecheck && bun test && bun run build"
+  },
+  "peerDependencies": {
+    "@hono/zod-validator": ">=0.7.0",
+    "hono": ">=4.6.0",
+    "zod": ">=4.0.0"
+  },
+  "devDependencies": {
+    "@hono/zod-validator": "^0.9.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@types/bun": "latest",
+    "hono": "^4.13.13",
+    "typescript": "^5.9.3",
+    "zod": "^4.6.7"
+  }
+}
