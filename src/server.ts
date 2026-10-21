@@ -1,5 +1,5 @@
 import type { Context, Handler, Hono } from 'hono'
-import { collectTools, type CollectOptions, type RouteTool } from './collect.js'
+import { collectAllTools, collectTools, type CollectOptions, type RouteTool } from './collect.js'
 import { ENDPOINT_META } from './meta.js'
 
 export interface McpOptions extends CollectOptions {
@@ -21,6 +21,11 @@ export interface McpOptions extends CollectOptions {
    * Recommended when serving on localhost, to block DNS-rebinding attacks.
    */
   allowedOrigins?: string[]
+  /**
+   * Log a warning at startup listing tools without a `describeTool()` description.
+   * Default: true. Pass a function to route the message to your own logger.
+   */
+  warnUndescribed?: boolean | ((message: string) => void)
 }
 
 export const SUPPORTED_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26']
@@ -51,6 +56,20 @@ export function createMcpHandler(app: Hono<any, any, any>, options: McpOptions =
   let tools: RouteTool[] | undefined
   // Collected lazily so routes registered after mountMcp() are included too.
   const getTools = () => (tools ??= collectTools(app, options))
+
+  // Runs once the synchronous route registration is done, so the warning shows at startup.
+  if (options.warnUndescribed !== false) {
+    queueMicrotask(() => {
+      try {
+        const message = undescribedWarning(collectAllTools(app, options), options.requireDescription)
+        if (!message) return
+        if (typeof options.warnUndescribed === 'function') options.warnUndescribed(message)
+        else console.warn(message)
+      } catch {
+        // Never let a diagnostic break startup.
+      }
+    })
+  }
 
   const handler: Handler = async (c) => {
     if (c.req.method !== 'POST') {
@@ -166,6 +185,19 @@ export function createMcpHandler(app: Hono<any, any, any>, options: McpOptions =
 export function mountMcp<T extends Hono<any, any, any>>(app: T, options: McpOptions = {}): T {
   app.on(['POST', 'GET', 'DELETE'], options.path ?? '/mcp', createMcpHandler(app, options))
   return app
+}
+
+export function undescribedWarning(tools: RouteTool[], hidden = false): string | undefined {
+  const missing = tools.filter((t) => !t.described)
+  if (!missing.length) return undefined
+  const list = missing.map((t) => `  - ${t.name} (${t.method} ${t.path})`).join('\n')
+  const verdict = hidden
+    ? 'hidden from agents (requireDescription: true)'
+    : 'exposed with only "METHOD /path" as a description, so agents will rarely pick them'
+  return (
+    `[hono-mcp-bridge] ${missing.length} tool(s) have no description and are ${verdict}:\n${list}\n` +
+    `Add describeTool('What it does and when to use it') to these routes.`
+  )
 }
 
 function fillPath(path: string, params: Record<string, unknown>): string {

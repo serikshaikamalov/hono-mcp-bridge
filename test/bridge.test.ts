@@ -3,7 +3,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { collectTools, defaultToolName, describeTool, mountMcp, zValidator } from '../src/index.js'
+import { collectTools, defaultToolName, describeTool, mountMcp, undescribedWarning, zValidator } from '../src/index.js'
 
 function buildApp() {
   const app = new Hono()
@@ -28,7 +28,7 @@ function buildApp() {
   api.get('/ping', (c) => c.text('pong'))
   app.route('/v1', api)
 
-  return mountMcp(app, { name: 'Test API', version: '1.2.3' })
+  return mountMcp(app, { name: 'Test API', version: '1.2.3', warnUndescribed: false })
 }
 
 async function rpc(app: Hono, body: unknown, headers: Record<string, string> = {}) {
@@ -168,5 +168,73 @@ describe('official MCP SDK client', () => {
     const result = await client.callTool({ name: 'get_tours', arguments: { query: { month: 5 } } })
     expect(result.structuredContent).toEqual({ query: { month: 5 } })
     await client.close()
+  })
+})
+
+describe('descriptions', () => {
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  test('marks tools without describeTool() as undescribed', () => {
+    const tools = collectTools(buildApp())
+    expect(tools.find((t) => t.name === 'get_tours')!.described).toBe(true)
+    expect(tools.find((t) => t.name === 'get_tours_by_id')!.described).toBe(false)
+    expect(tools.find((t) => t.name === 'get_tours_by_id')!.description).toBe('GET /tours/:id')
+  })
+
+  test('blank descriptions count as missing', () => {
+    const app = new Hono().get('/x', describeTool('   '), (c) => c.text('x'))
+    expect(collectTools(app)[0]!.described).toBe(false)
+  })
+
+  test('requireDescription hides undescribed tools from tools/list', async () => {
+    expect(collectTools(buildApp(), { requireDescription: true }).map((t) => t.name)).toEqual(['get_tours'])
+
+    const app = new Hono()
+    app.get('/a', describeTool('Read A'), (c) => c.text('a'))
+    app.get('/b', (c) => c.text('b'))
+    mountMcp(app, { requireDescription: true, warnUndescribed: false })
+    const { json } = await rpc(app, { jsonrpc: '2.0', id: 1, method: 'tools/list' })
+    expect(json.result.tools.map((t: any) => t.name)).toEqual(['get_a'])
+  })
+
+  test('warns once at startup, listing undescribed tools', async () => {
+    const messages: string[] = []
+    const app = new Hono()
+    mountMcp(app, { warnUndescribed: (m) => messages.push(m) })
+    // Routes registered after mountMcp() in the same tick are still checked.
+    app.get('/tours', describeTool('Search tours'), (c) => c.json([]))
+    app.get('/tours/:id', (c) => c.json({}))
+    await flush()
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toContain('get_tours_by_id (GET /tours/:id)')
+    expect(messages[0]).not.toContain('get_tours (')
+    expect(messages[0]).toContain('rarely pick them')
+  })
+
+  test('says the tools are hidden when requireDescription is on', () => {
+    const app = new Hono().get('/b', (c) => c.text('b'))
+    expect(undescribedWarning(collectTools(app), true)).toContain('hidden from agents')
+  })
+
+  test('no warning when every tool is described', async () => {
+    const messages: string[] = []
+    const app = new Hono().get('/a', describeTool('Read A'), (c) => c.text('a'))
+    mountMcp(app, { warnUndescribed: (m) => messages.push(m) })
+    await flush()
+    expect(messages).toEqual([])
+  })
+
+  test('defaults to console.warn', async () => {
+    const original = console.warn
+    const calls: unknown[][] = []
+    console.warn = (...args: unknown[]) => void calls.push(args)
+    try {
+      mountMcp(new Hono().get('/b', (c) => c.text('b')))
+      await flush()
+    } finally {
+      console.warn = original
+    }
+    expect(String(calls[0]?.[0])).toContain('get_b (GET /b)')
   })
 })

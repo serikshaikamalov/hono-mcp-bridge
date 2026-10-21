@@ -94,10 +94,37 @@ claude mcp add --transport http tours http://localhost:3000/mcp
 | Route       | Tool                                                                                                                                                                      |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Name        | `describeTool({ name })`, otherwise `GET /tours/:id` → `get_tours_by_id`                                                                                                  |
-| Description | `describeTool('...')`, otherwise `GET /tours/:id`. Write it for the agent: it decides when to call the tool from this text                                                |
+| Description | `describeTool('...')`, otherwise `GET /tours/:id`, and a startup warning lists these routes. See [Writing descriptions for agents](#writing-descriptions-for-agents)      |
 | Input       | `{ params, query, body }` from `zValidator('param' \| 'query' \| 'json', schema)`. Path params without a validator are derived from the path                              |
 | Annotations | `GET` → `readOnlyHint`; `DELETE` → `destructiveHint`                                                                                                                      |
 | Result      | Response body as text, plus `structuredContent` for JSON objects. Non-2xx responses are returned with `isError: true`, so the agent can read a validation error and retry |
+
+## Writing descriptions for agents
+
+The schemas come for free. The description does not, and it decides whether the tool gets used at all: an agent picks a tool from its name and description only, before it sees any parameters. A route described as `GET /tours/:id` is a tool the agent will rarely call, or will call at the wrong time.
+
+On startup the bridge lists every exposed route without a description:
+
+```
+[hono-mcp-bridge] 2 tool(s) have no description and are exposed with only "METHOD /path" as a description, so agents will rarely pick them:
+  - get_tours_by_id (GET /tours/:id)
+  - delete_bookings_by_id (DELETE /bookings/:id)
+Add describeTool('What it does and when to use it') to these routes.
+```
+
+Set `requireDescription: true` to hide such routes from agents entirely, so an undocumented route never becomes a tool.
+
+A good description says **what the tool does, what it returns and when to use it instead of a similar tool**:
+
+```ts
+// ✗ the agent can't tell this apart from search
+describeTool('Get tour')
+
+// ✓
+describeTool('Get full details of one tour (dates, hotel, price, seats left) by id. Use after get_tours, when the user asks about a specific tour.')
+```
+
+Field-level `.describe()` on the zod schema matters next: it tells the agent how to fill each argument once it has picked the tool (`.describe('Full name exactly as in the passport, in Latin letters')`).
 
 ## Options
 
@@ -112,6 +139,8 @@ mountMcp(app, {
   methods: ["GET"], // read-only API for agents
   forwardHeaders: ["authorization", "cookie"], // copied onto each tool call
   allowedOrigins: ["https://app.example.com"], // reject other Origin headers
+  requireDescription: true, // hide routes without describeTool()
+  warnUndescribed: (msg) => logger.warn(msg), // or false to silence the startup warning
 });
 ```
 

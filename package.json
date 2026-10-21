@@ -1,6 +1,6 @@
 {
   "name": "hono-mcp-bridge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Turn your existing Hono routes into MCP tools for AI agents. Change one import, keep your routes.",
   "type": "module",
   "license": "MIT",

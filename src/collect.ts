@@ -20,6 +20,8 @@ export interface RouteTool {
   path: string
   inputSchema: JsonSchema & { type: 'object' }
   annotations: Record<string, unknown>
+  /** False when the route has no `describeTool()` description and falls back to `METHOD /path`. */
+  described: boolean
 }
 
 export interface CollectOptions {
@@ -31,6 +33,12 @@ export interface CollectOptions {
   methods?: string[]
   /** Custom tool naming. Default: `get_tours_by_id` for `GET /tours/:id`. */
   toolName?: (route: { method: string; path: string }) => string
+  /**
+   * Hide routes that have no `describeTool()` description. Agents pick tools by
+   * name and description, so a tool described only as `GET /tours/:id` is rarely
+   * chosen correctly. Default: false.
+   */
+  requireDescription?: boolean
 }
 
 const DEFAULT_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
@@ -39,6 +47,12 @@ const DEFAULT_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 const ARG_KEYS: Record<BridgedTarget, string> = { param: 'params', query: 'query', json: 'body' }
 
 export function collectTools(app: Hono<any, any, any>, options: CollectOptions = {}): RouteTool[] {
+  const tools = collectAllTools(app, options)
+  return options.requireDescription ? tools.filter((t) => t.described) : tools
+}
+
+/** Like `collectTools`, but keeps undescribed tools even with `requireDescription`, so callers can report them. */
+export function collectAllTools(app: Hono<any, any, any>, options: CollectOptions = {}): RouteTool[] {
   const methods = (options.methods ?? DEFAULT_METHODS).map((m) => m.toUpperCase())
   const groups = new Map<string, { method: string; path: string; handlers: unknown[] }>()
 
@@ -67,15 +81,17 @@ export function collectTools(app: Hono<any, any, any>, options: CollectOptions =
       if (v) validators.set(v.target, v)
     }
 
+    const description = meta.description?.trim()
     const name = uniqueName(meta.name ?? options.toolName?.({ method, path }) ?? defaultToolName(method, path), usedNames)
     tools.push({
       name,
       title: meta.title,
-      description: meta.description ?? `${method} ${path}`,
+      description: description || `${method} ${path}`,
       method,
       path,
       inputSchema: buildInputSchema(path, validators),
       annotations: annotationsFor(method, meta.title),
+      described: !!description,
     })
   }
 
